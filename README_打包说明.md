@@ -10,11 +10,10 @@
 
 ### 方法1: 使用自动化脚本（推荐）
 
-在项目根目录运行：
+在项目根目录运行（uv 项目）：
 
-```bash
-# 使用uv项目的Python环境
-D:/code/vscode/wl/.venv/Scripts/python.exe build.py
+```powershell
+uv run python build.py
 ```
 
 脚本会自动完成：
@@ -24,12 +23,12 @@ D:/code/vscode/wl/.venv/Scripts/python.exe build.py
 
 ### 方法2: 手动打包
 
-```bash
-# 1. 安装PyInstaller
-python -m pip install pyinstaller
+```powershell
+# 1. 安装PyInstaller（可选，自动脚本会处理）
+uv add pyinstaller --dev
 
 # 2. 打包
-pyinstaller build.spec --clean
+uv run pyinstaller build.spec --clean
 ```
 
 ---
@@ -39,11 +38,12 @@ pyinstaller build.spec --clean
 ```
 wl/
 ├── dist/
-│   └── Excel数据提取工具.exe  ← 最终可执行文件
-├── build/                      ← 临时构建文件
-├── main.py                     ← 源代码
-├── build.py                    ← 打包脚本
-└── build.spec                  ← PyInstaller配置
+│   └── Excel数据提取工具/                 ← 分发文件夹（文件夹模式）
+│       └── Excel数据提取工具.exe         ← 双击运行
+├── build/                                 ← 临时构建文件
+├── main.py                                ← 源代码
+├── build.py                               ← 打包脚本
+└── build.spec                             ← PyInstaller配置
 ```
 
 ---
@@ -52,9 +52,9 @@ wl/
 
 ### 在开发机上测试
 
-```bash
-# 运行生成的exe
-.\dist\Excel数据提取工具.exe
+```powershell
+# 运行生成的exe（文件夹模式）
+.\dist\Excel数据提取工具\Excel数据提取工具.exe
 ```
 
 ### 分发给用户
@@ -231,7 +231,7 @@ exe = EXE(
 | 单文件 | 1个 | ~30MB | 较慢 |
 | 文件夹 | 多个 | ~40MB | 较快 |
 
-**当前配置**: 单文件模式（便于分发）
+**当前配置**: 文件夹模式（启动更快，推荐）
 
 ---
 
