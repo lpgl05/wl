@@ -5,15 +5,16 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font, PatternFill
 from datetime import datetime
+from tkinter import Tk, messagebox
+from tkinter.filedialog import askdirectory, asksaveasfilename
 
 # 创建一个函数，让用户打开指定文件夹，遍历该文件夹中的所有excel文件
 # 文件夹由用户指定，弹出一个文件管理器，让用户自己去选择文件夹
 def select_folder():
-    from tkinter import Tk
-    from tkinter.filedialog import askdirectory
-
-    Tk().withdraw()  # we don't want a full GUI, so keep the root window from appearing
+    root = Tk()
+    root.withdraw()  # we don't want a full GUI, so keep the root window from appearing
     folder_path = askdirectory(title="Select Folder Containing Excel Files")
+    root.destroy()
     return folder_path
 
 # 在遍历文件夹中的excel文件时，应该去掉 类似这种的临时文件 ~$0953-DX-挥发酚.xlsx
@@ -174,8 +175,6 @@ if __name__ == "__main__":
     
     # 将所有数据写入到一个Excel文件中
     if all_data:
-        from tkinter import Tk, filedialog, messagebox
-        
         # 创建DataFrame
         df = pd.DataFrame(all_data, columns=["项目名", "样品编号", "浓度"])
         
@@ -196,7 +195,7 @@ if __name__ == "__main__":
         messagebox.showinfo("保存提取结果", info_message)
         
         # 打开文件保存对话框
-        output_file = filedialog.asksaveasfilename(
+        output_file = asksaveasfilename(
             title="保存汇总结果",
             initialdir=folder_path,
             initialfile=default_filename,

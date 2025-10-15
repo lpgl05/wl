@@ -8,3 +8,8 @@ dependencies = [
     "pandas>=2.0.0",
     "openpyxl>=3.0.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.16.0",
+]
