@@ -248,32 +248,54 @@ if __name__ == "__main__":
         # 创建DataFrame
         df = pd.DataFrame(all_data, columns=["项目名", "样品编号", "浓度"])
         
-        # 弹出文件保存对话框
+        # 弹出文件保存对话框（改为：先选路径，再输入不带后缀的文件名）
         root = Tk()
         root.withdraw()  # 隐藏主窗口
-        
+
         # 默认文件名（包含关键词以便区分）
         default_filename = "汇总_0953_指定样品提取.xlsx"
-        
-        # 显示提示信息
-        info_message = f"即将保存提取结果：\n\n"
-        info_message += f"文件名: {default_filename}\n"
-        info_message += f"数据行数: {len(all_data)} 行\n"
-        info_message += f"来源文件: {len(excel_files)} 个\n\n"
-        info_message += f"请选择保存位置..."
-        
-        messagebox.showinfo("保存提取结果", info_message)
-        
-        # 打开文件保存对话框
-        output_file = asksaveasfilename(
-            title="保存汇总结果",
-            initialdir=folder_path,
-            initialfile=default_filename,
-            defaultextension=".xlsx",
-            filetypes=[("Excel文件", "*.xlsx"), ("所有文件", "*.*")]
+        default_basename = os.path.splitext(default_filename)[0]
+
+        # 1) 选择保存文件夹
+        messagebox.showinfo(
+            "保存提取结果",
+            (
+                f"即将保存提取结果：\n\n"
+                f"数据行数: {len(all_data)} 行\n"
+                f"来源文件: {len(excel_files)} 个\n\n"
+                f"请先选择保存文件夹，然后输入文件名（不含后缀）。"
+            ),
         )
-        
-        if output_file:  # 用户选择了保存路径
+        output_dir = askdirectory(title="选择保存文件夹", initialdir=folder_path)
+        if not output_dir:
+            print("\n⚠ 用户取消了保存操作（未选择保存文件夹）")
+            messagebox.showwarning("取消保存", "未选择保存文件夹，未保存提取结果")
+            raise SystemExit(0)
+
+        # 2) 输入不带后缀的文件名
+        filename_input = simpledialog.askstring(
+            title="输入文件名",
+            prompt="请输入要保存的文件名（不含后缀 .xlsx）：",
+            initialvalue=default_basename,
+            parent=root,
+        )
+
+        base_name = (filename_input or "").strip()
+        if not base_name:
+            messagebox.showinfo("使用默认文件名", f"未输入文件名，将使用默认文件名：{default_filename}")
+            base_name = default_basename
+
+        # 3) 组装最终路径并覆盖确认
+        output_file = os.path.join(output_dir, f"{base_name}.xlsx")
+        if os.path.exists(output_file):
+            from tkinter import messagebox as _mb
+            if not _mb.askyesno("文件已存在", f"{output_file}\n已存在，是否覆盖？"):
+                print("\n⚠ 用户取消了保存操作（拒绝覆盖已存在文件）")
+                messagebox.showwarning("取消保存", "未保存提取结果")
+                raise SystemExit(0)
+
+        # 4) 保存
+        try:
             df.to_excel(output_file, index=False)
             print(f"\n{'='*80}")
             print(f"✅ 所有提取结果已汇总保存到: {output_file}")
@@ -282,8 +304,8 @@ if __name__ == "__main__":
             
             # 显示成功提示
             messagebox.showinfo("保存成功", f"提取结果已成功保存到:\n{output_file}")
-        else:
-            print("\n⚠ 用户取消了保存操作")
-            messagebox.showwarning("取消保存", "未保存提取结果")
+        except Exception as e:
+            print(f"\n❌ 保存失败: {e}")
+            messagebox.showerror("保存失败", f"保存失败:\n{e}")
     else:
         print("\n⚠ 没有提取到任何数据")
