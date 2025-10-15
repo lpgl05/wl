@@ -5,7 +5,7 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font, PatternFill
 from datetime import datetime
-from tkinter import Tk, messagebox
+from tkinter import Tk, messagebox, simpledialog
 from tkinter.filedialog import askdirectory, asksaveasfilename
 
 # 创建一个函数，让用户打开指定文件夹，遍历该文件夹中的所有excel文件
@@ -27,13 +27,34 @@ def get_excel_files_from_folder(folder_path):
                     excel_files.append(os.path.join(root, file))
     return excel_files
 
-def extract_sample_and_concentration(file_path, skip_empty_rows=False):
+def _normalize_sample_id(value: object) -> str:
+    """
+    将样品编号做规范化，便于匹配：
+    - 转大写
+    - 去除空白、全角空白
+    - 去除“平行X”字样
+    - 去除中文括号及常见标点
+    """
+    s = str(value) if value is not None else ""
+    s = s.upper().strip()
+    # 去掉空白
+    s = re.sub(r"\s+", "", s)
+    # 去掉（平行1/2/...）字样
+    s = re.sub(r"平行[0-9]+", "", s)
+    # 去掉中英文括号及其中的空内容痕迹
+    s = s.replace("（", "(").replace("）", ")").replace("【", "[").replace("】", "]")
+    s = s.replace("，", ",").replace("。", ".")
+    return s
+
+def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=None):
     """
     提取Excel文件中的样品编号和浓度列数据
     
     参数:
         file_path: Excel文件的完整路径
         skip_empty_rows: 是否跳过样品编号和浓度都为空的行 (默认False)
+        targets: 可选，目标样品编号列表（例如 ["DX2509530201", "DX2509530301"]）。
+                 若提供，则只返回匹配这些样品编号的行。
     
     返回:
         二维数组，每行包含[样品编号, 浓度]
@@ -135,6 +156,15 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False):
         # 只保留包含250953且不包含KB、PS的行
         if '250953' in str(row[0]) and 'KB' not in str(row[0]) and 'PS' not in str(row[0]):
             filtered_array.append(row)
+
+    # 如果指定了目标样品编号，则进一步按目标过滤（按规范化后精确匹配）
+    if targets:
+        normalized_targets = {_normalize_sample_id(t) for t in targets}
+        filtered_array = [
+            [row[0], row[1]]
+            for row in filtered_array
+            if _normalize_sample_id(row[0]) in normalized_targets
+        ]
     
     # 打印结果
     print(f"\n提取的二维数组 (共 {len(result_array)} 行):")
@@ -152,6 +182,42 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False):
 
 if __name__ == "__main__":
     folder_path = select_folder()
+    
+    # 选择完文件夹后，弹框让用户输入目标样品编号（支持逗号/空格/分号/中文分隔符/换行）
+    def _parse_target_ids(text: str):
+        if not text:
+            return []
+        parts = re.split(r"[，,;；\s]+", text.strip())
+        ids = []
+        seen = set()
+        for p in parts:
+            p = p.strip().upper()
+            if not p:
+                continue
+            if p not in seen:
+                seen.add(p)
+                ids.append(p)
+        return ids
+
+    input_root = Tk()
+    input_root.withdraw()
+    ids_text = simpledialog.askstring(
+        title="输入样品编号",
+        prompt=(
+            "请输入要提取的样品编号：\n"
+            "- 多个编号可用逗号/空格/分号/中文逗号/换行分隔\n"
+            "- 例如：DX2509530201, DX2509530301"
+        ),
+        initialvalue="DX2509530201, DX2509530301",
+        parent=input_root,
+    )
+    input_root.destroy()
+
+    target_sample_ids = _parse_target_ids(ids_text or "")
+    if not target_sample_ids:
+        messagebox.showwarning("未输入编号", "未输入任何样品编号，程序将退出。")
+        raise SystemExit(0)
+
     excel_files = get_excel_files_from_folder(folder_path)
     print("Found Excel files:")
     
@@ -160,7 +226,11 @@ if __name__ == "__main__":
     
     for excel_file in excel_files:
         print(excel_file)
-        result_array = extract_sample_and_concentration(excel_file, skip_empty_rows=True)
+        result_array = extract_sample_and_concentration(
+            excel_file,
+            skip_empty_rows=True,
+            targets=target_sample_ids,
+        )
         
         # 获取文件名并提取汉字部分
         file_name = os.path.basename(excel_file)
@@ -182,8 +252,8 @@ if __name__ == "__main__":
         root = Tk()
         root.withdraw()  # 隐藏主窗口
         
-        # 默认文件名
-        default_filename = "汇总_提取结果.xlsx"
+        # 默认文件名（包含关键词以便区分）
+        default_filename = "汇总_0953_指定样品提取.xlsx"
         
         # 显示提示信息
         info_message = f"即将保存提取结果：\n\n"
