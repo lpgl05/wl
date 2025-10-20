@@ -6,7 +6,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font, PatternFill
 from datetime import datetime
 from tkinter import Tk, messagebox, simpledialog
-from tkinter.filedialog import askdirectory, asksaveasfilename
+from tkinter.filedialog import askdirectory, asksaveasfilename, askopenfilename
 
 # 创建一个函数，让用户打开指定文件夹，遍历该文件夹中的所有excel文件
 # 文件夹由用户指定，弹出一个文件管理器，让用户自己去选择文件夹
@@ -32,7 +32,7 @@ def _normalize_sample_id(value: object) -> str:
     将样品编号做规范化，便于匹配：
     - 转大写
     - 去除空白、全角空白
-    - 去除“平行X”字样
+    - 去除"平行X"字样
     - 去除中文括号及常见标点
     """
     s = str(value) if value is not None else ""
@@ -45,6 +45,116 @@ def _normalize_sample_id(value: object) -> str:
     s = s.replace("（", "(").replace("）", ")").replace("【", "[").replace("】", "]")
     s = s.replace("，", ",").replace("。", ".")
     return s
+
+def _parse_target_ids(text: str):
+    """
+    将文本字符串解析为编号列表。
+    支持逗号/空格/分号/中文逗号/换行等分隔符，自动去重并转大写。
+    
+    参数:
+        text: 多个编号的文本（以分隔符分开）
+    
+    返回:
+        去重后的编号列表
+    """
+    if not text:
+        return []
+    parts = re.split(r"[，,;；\s]+", text.strip())
+    ids = []
+    seen = set()
+    for p in parts:
+        p = p.strip().upper()
+        if not p:
+            continue
+        if p not in seen:
+            seen.add(p)
+            ids.append(p)
+    return ids
+
+def read_ids_from_txt(file_path: str):
+    """
+    从TXT文件读取编号列表，每行一个编号。
+    自动过滤空行和注释行，去重并转大写。
+    
+    参数:
+        file_path: TXT文件的完整路径
+    
+    返回:
+        去重后的编号列表，若读取失败返回 None
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        ids = []
+        seen = set()
+        for line in lines:
+            line = line.strip()
+            # 跳过空行和注释行（以#开头）
+            if not line or line.startswith('#'):
+                continue
+            # 去重并转大写
+            line_upper = line.upper()
+            if line_upper not in seen:
+                seen.add(line_upper)
+                ids.append(line_upper)
+        
+        return ids if ids else None
+    except Exception as e:
+        messagebox.showerror("读取失败", f"无法读取TXT文件：\n{e}")
+        return None
+
+def ask_sample_ids_source():
+    """
+    弹出对话框让用户选择样品编号的输入方式：
+    1. 直接输入 - 在对话框中手动输入多个编号
+    2. 从TXT文件导入 - 选择一个TXT文件，每行一个编号
+    
+    返回:
+        编号列表，若用户取消则返回 None
+    """
+    root = Tk()
+    root.withdraw()
+    
+    # 先让用户选择输入方式
+    choice = messagebox.askyesnocancel(
+        title="选择样品编号输入方式",
+        message="请选择如何输入样品编号：\n"
+                "\n"
+                "\"是\" - 直接输入：在对话框中输入多个编号（逗号/空格/分号分隔）\n"
+                "\"否\" - 从文件导入：选择一个TXT文件，每行一个编号\n"
+                "\"取消\" - 退出程序",
+    )
+    
+    if choice is None:  # 取消
+        root.destroy()
+        return None
+    elif choice:  # 是 - 直接输入
+        ids_text = simpledialog.askstring(
+            title="输入样品编号",
+            prompt=(
+                "请输入要提取的样品编号：\n"
+                "- 多个编号可用逗号/空格/分号/中文逗号/换行分隔\n"
+                "- 例如：DX2509530201, DX2509530301"
+            ),
+            initialvalue="DX2509530201, DX2509530301",
+            parent=root,
+        )
+        root.destroy()
+        if ids_text:
+            return _parse_target_ids(ids_text)
+        else:
+            return None
+    else:  # 否 - 从文件导入
+        root.destroy()
+        file_path = askopenfilename(
+            title="选择包含样品编号的TXT文件",
+            filetypes=[("文本文件", "*.txt"), ("所有文件", "*.*")]
+        )
+        if file_path:
+            return read_ids_from_txt(file_path)
+        else:
+            return None
 
 def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=None):
     """
@@ -199,27 +309,15 @@ if __name__ == "__main__":
                 ids.append(p)
         return ids
 
-    input_root = Tk()
-    input_root.withdraw()
-    ids_text = simpledialog.askstring(
-        title="输入样品编号",
-        prompt=(
-            "请输入要提取的样品编号：\n"
-            "- 多个编号可用逗号/空格/分号/中文逗号/换行分隔\n"
-            "- 例如：DX2509530201, DX2509530301"
-        ),
-        initialvalue="DX2509530201, DX2509530301",
-        parent=input_root,
-    )
-    input_root.destroy()
-
-    target_sample_ids = _parse_target_ids(ids_text or "")
+    # 让用户选择样品编号输入方式：直接输入或从TXT文件导入
+    target_sample_ids = ask_sample_ids_source()
     if not target_sample_ids:
         messagebox.showwarning("未输入编号", "未输入任何样品编号，程序将退出。")
         raise SystemExit(0)
 
     excel_files = get_excel_files_from_folder(folder_path)
     print("Found Excel files:")
+    print(f"待处理的样品编号（共 {len(target_sample_ids)} 个）: {', '.join(target_sample_ids)}")
     
     # 创建一个总的数组来存储所有项目的数据
     all_data = []
