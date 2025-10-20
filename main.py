@@ -175,7 +175,7 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
     
     # 样品编号和浓度列名的可能变体
     sample_col_names = ['样品编号', '样品名称', '样品', '编号']
-    concentration_col_names = ['浓度mg/L', '浓度mg/l', '浓度']
+    concentration_col_keyword = '浓度'  # 只需包含"浓度"字样即可
     
     df = None
     header_row = None
@@ -186,7 +186,7 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
     for header in range(100):
         try:
             temp_df = pd.read_excel(file_path, header=header)
-            
+        
             # 查找样品编号列
             temp_sample_col = None
             for col_name in sample_col_names:
@@ -194,10 +194,10 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
                     temp_sample_col = col_name
                     break
             
-            # 查找浓度列
+            # 查找浓度列（只需包含"浓度"字样）
             temp_concentration_col = None
-            for col_name in concentration_col_names:
-                if col_name in temp_df.columns:
+            for col_name in temp_df.columns:
+                if concentration_col_keyword in col_name:
                     temp_concentration_col = col_name
                     break
             
@@ -210,8 +210,15 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
                 print(f"✓ 使用第 {header+1} 行作为列名 (header={header})")
                 break
         except Exception as e:
+            error_msg = str(e)
+            # 如果是 xlrd 相关错误，说明文件是 .xls 格式但缺少 xlrd 库
+            if 'xlrd' in error_msg.lower():
+                print(f"❌ 文件格式错误: 该文件是 .xls 格式，需要安装 xlrd 库来支持")
+                print(f"   解决方案: pip install xlrd 或 uv add xlrd")
+                return []
+            # 其他异常继续尝试
+            print(f"尝试 header={header} 失败: {e}")
             continue
-    
     # 如果没有找到合适的列
     if df is None or sample_col is None or concentration_col is None:
         print(f"\n⚠ 警告: 未找到样品编号或浓度列")
