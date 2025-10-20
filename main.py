@@ -241,7 +241,7 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
     print(f"{'='*80}")
     
     # 样品编号和浓度列名的可能变体
-    sample_col_names = ['样品编号', '样品名称', '样品', '编号']
+    sample_col_names = ['样品编号', '编号']
     concentration_col_keyword = '浓度'  # 只需包含"浓度"字样即可
     
     df = None
