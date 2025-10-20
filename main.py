@@ -104,6 +104,73 @@ def read_ids_from_txt(file_path: str):
         messagebox.showerror("读取失败", f"无法读取TXT文件：\n{e}")
         return None
 
+def extract_metadata_from_excel(file_path):
+    """
+    从Excel文件中提取元数据信息（分析人、分析日期、使用仪器、仪器型号）
+    通过查找这些标签名称，然后获取其右侧相邻单元格的值
+    
+    参数:
+        file_path: Excel文件的完整路径
+    
+    返回:
+        字典，包含 {
+            'analyzer': '分析人',
+            'analysis_date': '分析日期',
+            'instrument': '使用仪器',
+            'instrument_model': '仪器型号'
+        }
+    """
+    metadata = {
+        'analyzer': '',
+        'analysis_date': ''
+    }
+    
+    try:
+        if file_path.endswith('.xlsx'):
+            wb = load_workbook(file_path, data_only=True)
+            if not wb.sheetnames:
+                return metadata
+            ws = wb[wb.sheetnames[0]]
+            
+            # 标签和对应字段的映射
+            label_mapping = {
+                '分析人': 'analyzer',
+                '分析人员': 'analyzer',
+                '分析日期': 'analysis_date'
+            }
+            
+            # 遍历所有单元格查找标签
+            for row in ws.iter_rows(min_row=1, max_row=100):
+                for cell in row:
+                    cell_value = str(cell.value).strip() if cell.value else ""
+                    if cell_value in label_mapping:
+                        # 找到标签，获取右侧相邻单元格的值
+                        right_cell = ws.cell(row=cell.row, column=cell.column + 1)
+                        field_name = label_mapping[cell_value]
+                        metadata[field_name] = str(right_cell.value).strip() if right_cell.value else ""
+        else:
+            # .xls 文件处理
+            df = pd.read_excel(file_path, header=None)
+            label_mapping = {
+                '分析人': 'analyzer',
+                '分析人员': 'analyzer',
+                '分析日期': 'analysis_date'
+            }
+            
+            for idx, row in df.iterrows():
+                for col_idx, cell_value in enumerate(row):
+                    cell_str = str(cell_value).strip() if cell_value and pd.notna(cell_value) else ""
+                    if cell_str in label_mapping:
+                        # 获取右侧相邻单元格
+                        if col_idx + 1 < len(row):
+                            right_value = row.iloc[col_idx + 1]
+                            field_name = label_mapping[cell_str]
+                            metadata[field_name] = str(right_value).strip() if right_value and pd.notna(right_value) else ""
+    except Exception as e:
+        print(f"⚠ 提取元数据失败: {e}")
+    
+    return metadata
+
 def ask_sample_ids_source():
     """
     弹出对话框让用户选择样品编号的输入方式：
@@ -331,6 +398,10 @@ if __name__ == "__main__":
     
     for excel_file in excel_files:
         print(excel_file)
+        
+        # 提取元数据（分析人、分析日期、使用仪器、仪器型号）
+        metadata = extract_metadata_from_excel(excel_file)
+        
         result_array = extract_sample_and_concentration(
             excel_file,
             skip_empty_rows=True,
@@ -343,15 +414,24 @@ if __name__ == "__main__":
         chinese_chars = re.findall(r'[\u4e00-\u9fff]+', file_name)
         chinese_name = ''.join(chinese_chars) if chinese_chars else file_name
         
-        # 基于result_array,再新建一列（第一列），内容为chinese_name
+        # 基于result_array，添加元数据列
         for row in result_array:
-            row.insert(0, chinese_name)
+            # 按新的顺序插入：分析人、分析日期、项目名、样品编号、浓度
+            row.insert(0, metadata.get('analysis_date', ''))
+            row.insert(0, metadata.get('analyzer', ''))
+            row.insert(2, chinese_name)
             all_data.append(row)
     
     # 将所有数据写入到一个Excel文件中
     if all_data:
-        # 创建DataFrame
-        df = pd.DataFrame(all_data, columns=["项目名", "样品编号", "浓度"])
+        # 创建DataFrame，包含新增的元数据列
+        df = pd.DataFrame(all_data, columns=[
+            "分析人", 
+            "分析日期", 
+            "项目名", 
+            "样品编号", 
+            "浓度"
+        ])
         
         # 弹出文件保存对话框（改为：先选路径，再输入不带后缀的文件名）
         root = Tk()
