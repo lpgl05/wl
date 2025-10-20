@@ -145,17 +145,17 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
                             break
     
     # 第二步：去掉所有"平行1"、"平行2"等字样
-    for i, row in enumerate(result_array):
-        if '250953' in str(row[0]) and 'KB' not in str(row[0]) and 'PS' not in str(row[0]):
-            if '平行' in str(row[0]):
-                row[0] = re.sub(r'平行[1-9]+', '', str(row[0]))
+    #for i, row in enumerate(result_array):
+    #    if '250953' in str(row[0]) and 'KB' not in str(row[0]) and 'PS' not in str(row[0]):
+    #        if '平行' in str(row[0]):
+    #            row[0] = re.sub(r'平行[1-9]+', '', str(row[0]))
     
     # 筛选符合条件的行，形成新数组
-    filtered_array = []
-    for i, row in enumerate(result_array):
-        # 只保留包含250953且不包含KB、PS的行
-        if '250953' in str(row[0]) and 'KB' not in str(row[0]) and 'PS' not in str(row[0]):
-            filtered_array.append(row)
+    filtered_array = result_array.copy()
+    #for i, row in enumerate(result_array):
+    #    # 只保留包含250953且不包含KB、PS的行
+    #    if '250953' in str(row[0]) and 'KB' not in str(row[0]) and 'PS' not in str(row[0]):
+    #        filtered_array.append(row)
 
     # 如果指定了目标样品编号，则进一步按目标过滤（按规范化后精确匹配）
     if targets:
