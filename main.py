@@ -242,7 +242,7 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
     
     # 样品编号和浓度列名的可能变体
     sample_col_names = ['样品编号', '编号']
-    concentration_col_keyword = '浓度'  # 只需包含"浓度"字样即可
+    concentration_col_names = ['样品浓度', '计算结果浓度']  # 仅提取这两个列名
     
     df = None
     header_row = None
@@ -261,11 +261,19 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
                     temp_sample_col = col_name
                     break
             
-            # 查找浓度列（只需包含"浓度"字样）
+            # 查找浓度列（精确匹配"样品浓度"或"计算结果浓度"，或模糊匹配包含这些关键词的列名）
             temp_concentration_col = None
             for col_name in temp_df.columns:
-                if concentration_col_keyword in col_name:
+                # 先尝试精确匹配
+                if col_name in concentration_col_names:
                     temp_concentration_col = col_name
+                    break
+                # 再尝试模糊匹配（包含"样品浓度"或"计算结果浓度"）
+                for keyword in concentration_col_names:
+                    if keyword in col_name:
+                        temp_concentration_col = col_name
+                        break
+                if temp_concentration_col:
                     break
             
             # 如果找到了两个目标列，就使用这个header
@@ -430,7 +438,7 @@ if __name__ == "__main__":
             "分析日期", 
             "项目名", 
             "样品编号", 
-            "浓度"
+            "样品浓度"
         ])
         
         # 弹出文件保存对话框（改为：先选路径，再输入不带后缀的文件名）
