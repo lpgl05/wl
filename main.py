@@ -223,7 +223,64 @@ def ask_sample_ids_source():
         else:
             return None
 
-def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=None):
+def get_sheets_to_process(file_path):
+    """
+    获取需要处理的sheet页列表及对应的项目名提取策略
+    
+    参数:
+        file_path: Excel文件的完整路径
+    
+    返回:
+        list of dict: [
+            {
+                'sheet_name': sheet名称,
+                'project_name_source': 'sheet' 或 'file' (项目名来源)
+            },
+            ...
+        ]
+    """
+    try:
+        # 读取所有sheet名称
+        if file_path.endswith('.xlsx'):
+            wb = load_workbook(file_path, read_only=True, data_only=True)
+            sheet_names = wb.sheetnames
+            wb.close()
+        else:  # .xls
+            xls = pd.ExcelFile(file_path)
+            sheet_names = xls.sheet_names
+            xls.close()
+        
+        # 判断sheet名称模式
+        # 检查是否所有sheet都符合 "sheet[1-9]" 模式(不区分大小写)
+        sheet_pattern = re.compile(r'^sheet[1-9]$', re.IGNORECASE)
+        all_match_pattern = all(sheet_pattern.match(name) for name in sheet_names)
+        
+        result = []
+        if all_match_pattern:
+            # 情况2: 所有sheet都是sheet[1-9]格式，只处理sheet1，项目名从文件名获取
+            for name in sheet_names:
+                if name.lower() == 'sheet1':
+                    result.append({
+                        'sheet_name': name,
+                        'project_name_source': 'file'
+                    })
+                    break
+        else:
+            # 情况1: 存在非sheet[1-9]格式的sheet，处理所有非sheet[1-9]的sheet，项目名从sheet名获取
+            for name in sheet_names:
+                if not sheet_pattern.match(name):
+                    result.append({
+                        'sheet_name': name,
+                        'project_name_source': 'sheet'
+                    })
+        
+        return result
+    except Exception as e:
+        print(f"⚠ 读取sheet列表失败: {e}")
+        # 出错时返回默认第一个sheet，项目名从文件名获取
+        return [{'sheet_name': 0, 'project_name_source': 'file'}]
+
+def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=None, sheet_name=None):
     """
     提取Excel文件中的样品编号和浓度列数据
     
@@ -232,12 +289,15 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
         skip_empty_rows: 是否跳过样品编号和浓度都为空的行 (默认False)
         targets: 可选，目标样品编号列表（例如 ["DX2509530201", "DX2509530301"]）。
                  若提供，则只返回匹配这些样品编号的行。
+        sheet_name: 可选，指定要读取的sheet名称或索引。若不提供，则读取第一个sheet。
     
     返回:
         二维数组，每行包含[样品编号, 浓度]
     """
     print(f"\n{'='*80}")
     print(f"处理文件: {file_path}")
+    if sheet_name is not None:
+        print(f"处理Sheet: {sheet_name}")
     print(f"{'='*80}")
     
     # 样品编号和浓度列名的可能变体
@@ -252,7 +312,7 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
     # 尝试不同的header行 (0-99，即第1-100行) 来找到包含目标列的行
     for header in range(100):
         try:
-            temp_df = pd.read_excel(file_path, header=header)
+            temp_df = pd.read_excel(file_path, sheet_name=sheet_name, header=header)
         
             # 查找样品编号列
             temp_sample_col = None
@@ -310,10 +370,15 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
         try:
             # 同时加载两个工作簿版本
             wb_values = load_workbook(file_path, data_only=True)  # 获取缓存的计算结果
-            ws_values = wb_values[wb_values.sheetnames[0]]
-            
             wb_format = load_workbook(file_path, data_only=False)  # 获取格式信息
-            ws_format = wb_format[wb_format.sheetnames[0]]
+            
+            # 选择指定的sheet或默认第一个sheet
+            if sheet_name is not None:
+                ws_values = wb_values[sheet_name]
+                ws_format = wb_format[sheet_name]
+            else:
+                ws_values = wb_values[wb_values.sheetnames[0]]
+                ws_format = wb_format[wb_format.sheetnames[0]]
             
             # 找到样品编号和浓度列在工作表中的列索引
             sample_col_idx = None
@@ -478,25 +543,43 @@ if __name__ == "__main__":
         # 提取元数据（分析人、分析日期、使用仪器、仪器型号）
         metadata = extract_metadata_from_excel(excel_file)
         
-        result_array = extract_sample_and_concentration(
-            excel_file,
-            skip_empty_rows=True,
-            targets=target_sample_ids,
-        )
+        # 获取需要处理的sheet列表
+        sheets_info = get_sheets_to_process(excel_file)
         
-        # 获取文件名并提取汉字部分
+        # 获取文件名并提取汉字部分（用于项目名从文件名获取的情况）
         file_name = os.path.basename(excel_file)
-        # 使用正则表达式提取汉字
         chinese_chars = re.findall(r'[\u4e00-\u9fff]+', file_name)
-        chinese_name = ''.join(chinese_chars) if chinese_chars else file_name
+        file_chinese_name = ''.join(chinese_chars) if chinese_chars else file_name
         
-        # 基于result_array，添加元数据列
-        for row in result_array:
-            # 按新的顺序插入：分析人、分析日期、项目名、样品编号、浓度
-            row.insert(0, metadata.get('analysis_date', ''))
-            row.insert(0, metadata.get('analyzer', ''))
-            row.insert(2, chinese_name)
-            all_data.append(row)
+        # 处理每个sheet
+        for sheet_info in sheets_info:
+            sheet_name = sheet_info['sheet_name']
+            project_name_source = sheet_info['project_name_source']
+            
+            # 提取数据
+            result_array = extract_sample_and_concentration(
+                excel_file,
+                skip_empty_rows=True,
+                targets=target_sample_ids,
+                sheet_name=sheet_name,
+            )
+            
+            # 根据来源确定项目名
+            if project_name_source == 'sheet':
+                # 从sheet名称提取汉字
+                sheet_chinese_chars = re.findall(r'[\u4e00-\u9fff]+', str(sheet_name))
+                project_name = ''.join(sheet_chinese_chars) if sheet_chinese_chars else str(sheet_name)
+            else:  # 'file'
+                # 从文件名提取汉字
+                project_name = file_chinese_name
+            
+            # 基于result_array，添加元数据列
+            for row in result_array:
+                # 按新的顺序插入：分析人、分析日期、项目名、样品编号、浓度
+                row.insert(0, metadata.get('analysis_date', ''))
+                row.insert(0, metadata.get('analyzer', ''))
+                row.insert(2, project_name)
+                all_data.append(row)
     
     # 将所有数据写入到一个Excel文件中
     if all_data:
