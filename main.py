@@ -32,15 +32,15 @@ def _normalize_sample_id(value: object) -> str:
     将样品编号做规范化，便于匹配：
     - 转大写
     - 去除空白、全角空白
-    - 去除"平行X"字样
+    - 保留"平行X"字样（作为独立样品编号）
     - 去除中文括号及常见标点
     """
     s = str(value) if value is not None else ""
     s = s.upper().strip()
     # 去掉空白
     s = re.sub(r"\s+", "", s)
-    # 去掉（平行1/2/...）字样
-    s = re.sub(r"平行[0-9]+", "", s)
+    # 注意：不再去除"平行1/2/..."字样，保留作为独立样品编号
+    # s = re.sub(r"平行[0-9]+", "", s)  # 已禁用
     # 去掉中英文括号及其中的空内容痕迹
     s = s.replace("（", "(").replace("）", ")").replace("【", "[").replace("】", "]")
     s = s.replace("，", ",").replace("。", ".")
@@ -475,29 +475,10 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
             
             result_array.append([sample, concentration])
     
-    # 第一步：填充平行样品中浓度为nan的行
-    for i, row in enumerate(result_array):
-        # 根据样品编号决定是否需要处理
-        if '250953' in str(row[0]) and 'KB' not in str(row[0]) and 'PS' not in str(row[0]):
-            # 如果样品编号中存在 "平行"， 且对应的浓度列为NaN时， 则用前后行的浓度值进行填充
-            if '平行' in str(row[0]) and pd.isna(row[1]):
-                # 向前查找有浓度值的平行样品
-                for j in range(i-1, -1, -1):
-                    if '平行' in str(result_array[j][0]) and not pd.isna(result_array[j][1]):
-                        row[1] = result_array[j][1]
-                        break
-                # 如果向前没找到，向后查找有浓度值的平行样品
-                if pd.isna(row[1]):
-                    for j in range(i+1, len(result_array)):
-                        if '平行' in str(result_array[j][0]) and not pd.isna(result_array[j][1]):
-                            row[1] = result_array[j][1]
-                            break
-    
-    # 第二步：去掉所有"平行1"、"平行2"等字样
-    #for i, row in enumerate(result_array):
-    #    if '250953' in str(row[0]) and 'KB' not in str(row[0]) and 'PS' not in str(row[0]):
-    #        if '平行' in str(row[0]):
-    #            row[0] = re.sub(r'平行[1-9]+', '', str(row[0]))
+    # 注意：平行样品现在作为独立样品处理
+    # - 不再填充平行样品的空值
+    # - 不再去除"平行X"字样
+    # - 浓度为空时保持空值(NaN)
     
     # 筛选符合条件的行，形成新数组
     filtered_array = result_array.copy()
