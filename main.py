@@ -46,10 +46,66 @@ def _normalize_sample_id(value: object) -> str:
     s = s.replace("，", ",").replace("。", ".")
     return s
 
+def _expand_range_pattern(pattern: str):
+    """
+    展开区间模式的样品编号。
+    
+    支持格式:
+    - DX2523660(1-6)01 → 中间一位数字变化，展开为 DX2523660101, DX2523660201, ..., DX2523660601
+    - ABC(1-3)XYZ → ABC1XYZ, ABC2XYZ, ABC3XYZ
+    - TEST(01-05) → TEST01, TEST02, TEST03, TEST04, TEST05
+    
+    参数:
+        pattern: 可能包含区间的样品编号模式
+    
+    返回:
+        展开后的编号列表，如果不是区间模式则返回原编号
+    """
+    # 匹配模式: 前缀(起始-结束)后缀
+    # 支持前缀和后缀都可以为空或任意字符
+    match = re.match(r'^(.*?)\((\d+)-(\d+)\)(.*)$', pattern.strip())
+    
+    if not match:
+        # 不是区间模式，返回原字符串
+        return [pattern]
+    
+    prefix = match.group(1)  # 前缀（区间前的部分）
+    start_str = match.group(2)  # 起始数字
+    end_str = match.group(3)  # 结束数字
+    suffix = match.group(4)  # 后缀（区间后的部分）
+    
+    # 获取数字的位数（用于补零）
+    width = len(start_str)
+    
+    try:
+        start = int(start_str)
+        end = int(end_str)
+        
+        if start > end:
+            print(f"⚠ 警告: 区间起始值({start})大于结束值({end})，已自动交换")
+            start, end = end, start
+        
+        # 生成区间内的所有编号
+        result = []
+        for i in range(start, end + 1):
+            # 格式化数字，保持位数（补零）
+            num_str = str(i).zfill(width)
+            # 组合: 前缀 + 数字 + 后缀
+            result.append(f"{prefix}{num_str}{suffix}")
+        
+        return result
+    except ValueError:
+        print(f"⚠ 警告: 无法解析区间 '{pattern}'，作为普通编号处理")
+        return [pattern]
+
 def _parse_target_ids(text: str):
     """
     将文本字符串解析为编号列表。
     支持逗号/空格/分号/中文逗号/换行等分隔符，自动去重并转大写。
+    支持区间语法: 
+    - DX2523660(1-6)01 → 中间数字变化，展开为 DX2523660101, 201, 301, 401, 501, 601
+    - ABC(1-5) → 展开为 ABC1, ABC2, ABC3, ABC4, ABC5
+    - TEST(01-05)XYZ → 展开为 TEST01XYZ, TEST02XYZ, ..., TEST05XYZ
     
     参数:
         text: 多个编号的文本（以分隔符分开）
@@ -63,18 +119,27 @@ def _parse_target_ids(text: str):
     ids = []
     seen = set()
     for p in parts:
-        p = p.strip().upper()
+        p = p.strip()
         if not p:
             continue
-        if p not in seen:
-            seen.add(p)
-            ids.append(p)
+        
+        # 展开可能的区间模式
+        expanded = _expand_range_pattern(p)
+        
+        for item in expanded:
+            item_upper = item.upper()
+            if item_upper not in seen:
+                seen.add(item_upper)
+                ids.append(item_upper)
     return ids
 
 def read_ids_from_txt(file_path: str):
     """
     从TXT文件读取编号列表，每行一个编号。
     自动过滤空行和注释行，去重并转大写。
+    支持区间语法: 
+    - DX2523660(1-6)01 → 展开为 DX2523660101, 201, 301, 401, 501, 601
+    - ABC(1-5) → 展开为 ABC1, ABC2, ABC3, ABC4, ABC5
     
     参数:
         file_path: TXT文件的完整路径
@@ -93,11 +158,15 @@ def read_ids_from_txt(file_path: str):
             # 跳过空行和注释行（以#开头）
             if not line or line.startswith('#'):
                 continue
-            # 去重并转大写
-            line_upper = line.upper()
-            if line_upper not in seen:
-                seen.add(line_upper)
-                ids.append(line_upper)
+            
+            # 展开可能的区间模式
+            expanded = _expand_range_pattern(line)
+            
+            for item in expanded:
+                item_upper = item.upper()
+                if item_upper not in seen:
+                    seen.add(item_upper)
+                    ids.append(item_upper)
         
         return ids if ids else None
     except Exception as e:
@@ -226,7 +295,8 @@ def ask_sample_ids_source():
             prompt=(
                 "请输入要提取的样品编号：\n"
                 "- 多个编号可用逗号/空格/分号/中文逗号/换行分隔\n"
-                "- 例如：DX2509530201, DX2509530301"
+                "- 区间语法: DX2523660(1-6)01 表示中间数字1到6\n"
+                "- 例如：DX2509530201, DX2523660(1-6)01"
             ),
             initialvalue="DX2509530201, DX2509530301",
             parent=root,
@@ -513,22 +583,6 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
 if __name__ == "__main__":
     folder_path = select_folder()
     
-    # 选择完文件夹后，弹框让用户输入目标样品编号（支持逗号/空格/分号/中文分隔符/换行）
-    def _parse_target_ids(text: str):
-        if not text:
-            return []
-        parts = re.split(r"[，,;；\s]+", text.strip())
-        ids = []
-        seen = set()
-        for p in parts:
-            p = p.strip().upper()
-            if not p:
-                continue
-            if p not in seen:
-                seen.add(p)
-                ids.append(p)
-        return ids
-
     # 让用户选择样品编号输入方式：直接输入或从TXT文件导入
     target_sample_ids = ask_sample_ids_source()
     if not target_sample_ids:
