@@ -104,24 +104,29 @@ def read_ids_from_txt(file_path: str):
         messagebox.showerror("读取失败", f"无法读取TXT文件：\n{e}")
         return None
 
-def extract_metadata_from_excel(file_path):
+def extract_metadata_from_excel(file_path, sheet_name=None):
     """
-    从Excel文件中提取元数据信息（分析人、分析日期、使用仪器、仪器型号）
+    从Excel文件中提取元数据信息
     通过查找这些标签名称，然后获取其右侧相邻单元格的值
     
     参数:
         file_path: Excel文件的完整路径
+        sheet_name: 可选，指定要读取的sheet名称。若不提供，则读取第一个sheet。
     
     返回:
         字典，包含 {
-            'analyzer': '分析人',
-            'analysis_date': '分析日期',
-            'instrument': '使用仪器',
-            'instrument_model': '仪器型号'
+            'analyzer': '分析人/分析人员',
+            'instrument_number': '仪器编号',
+            'analysis_method': '分析方法',
+            'detection_limit': '检出限',
+            'analysis_date': '分析日期'
         }
     """
     metadata = {
         'analyzer': '',
+        'instrument_number': '',
+        'analysis_method': '',
+        'detection_limit': '',
         'analysis_date': ''
     }
     
@@ -130,12 +135,22 @@ def extract_metadata_from_excel(file_path):
             wb = load_workbook(file_path, data_only=True)
             if not wb.sheetnames:
                 return metadata
-            ws = wb[wb.sheetnames[0]]
             
-            # 标签和对应字段的映射
+            # 选择指定的sheet或默认第一个sheet
+            if sheet_name is not None:
+                ws = wb[sheet_name]
+            else:
+                ws = wb[wb.sheetnames[0]]
+            
+            # 标签和对应字段的映射（包含多个可能的标签名称）
             label_mapping = {
                 '分析人': 'analyzer',
                 '分析人员': 'analyzer',
+                '仪器编号': 'instrument_number',
+                '仪器型号': 'instrument_number',
+                '使用仪器': 'instrument_number',
+                '分析方法': 'analysis_method',
+                '检出限': 'detection_limit',
                 '分析日期': 'analysis_date'
             }
             
@@ -147,13 +162,20 @@ def extract_metadata_from_excel(file_path):
                         # 找到标签，获取右侧相邻单元格的值
                         right_cell = ws.cell(row=cell.row, column=cell.column + 1)
                         field_name = label_mapping[cell_value]
-                        metadata[field_name] = str(right_cell.value).strip() if right_cell.value else ""
+                        # 只在该字段还没有值时才填充（优先使用先找到的值）
+                        if not metadata[field_name]:
+                            metadata[field_name] = str(right_cell.value).strip() if right_cell.value else ""
         else:
             # .xls 文件处理
-            df = pd.read_excel(file_path, header=None)
+            df = pd.read_excel(file_path, sheet_name=sheet_name, header=None)
             label_mapping = {
                 '分析人': 'analyzer',
                 '分析人员': 'analyzer',
+                '仪器编号': 'instrument_number',
+                '仪器型号': 'instrument_number',
+                '使用仪器': 'instrument_number',
+                '分析方法': 'analysis_method',
+                '检出限': 'detection_limit',
                 '分析日期': 'analysis_date'
             }
             
@@ -165,7 +187,9 @@ def extract_metadata_from_excel(file_path):
                         if col_idx + 1 < len(row):
                             right_value = row.iloc[col_idx + 1]
                             field_name = label_mapping[cell_str]
-                            metadata[field_name] = str(right_value).strip() if right_value and pd.notna(right_value) else ""
+                            # 只在该字段还没有值时才填充
+                            if not metadata[field_name]:
+                                metadata[field_name] = str(right_value).strip() if right_value and pd.notna(right_value) else ""
     except Exception as e:
         print(f"⚠ 提取元数据失败: {e}")
     
@@ -540,9 +564,6 @@ if __name__ == "__main__":
     for excel_file in excel_files:
         print(excel_file)
         
-        # 提取元数据（分析人、分析日期、使用仪器、仪器型号）
-        metadata = extract_metadata_from_excel(excel_file)
-        
         # 获取需要处理的sheet列表
         sheets_info = get_sheets_to_process(excel_file)
         
@@ -555,6 +576,9 @@ if __name__ == "__main__":
         for sheet_info in sheets_info:
             sheet_name = sheet_info['sheet_name']
             project_name_source = sheet_info['project_name_source']
+            
+            # 为每个sheet提取元数据（从当前sheet页中提取）
+            metadata = extract_metadata_from_excel(excel_file, sheet_name=sheet_name)
             
             # 提取数据
             result_array = extract_sample_and_concentration(
@@ -575,10 +599,13 @@ if __name__ == "__main__":
             
             # 基于result_array，添加元数据列
             for row in result_array:
-                # 按新的顺序插入：分析人、分析日期、项目名、样品编号、浓度
+                # 列顺序：分析人、仪器编号、分析方法、检出限、分析日期、项目名、样品编号、样品浓度
                 row.insert(0, metadata.get('analysis_date', ''))
+                row.insert(0, metadata.get('detection_limit', ''))
+                row.insert(0, metadata.get('analysis_method', ''))
+                row.insert(0, metadata.get('instrument_number', ''))
                 row.insert(0, metadata.get('analyzer', ''))
-                row.insert(2, project_name)
+                row.insert(5, project_name)  # 项目名在第6列（索引5）
                 all_data.append(row)
     
     # 将所有数据写入到一个Excel文件中
@@ -586,6 +613,9 @@ if __name__ == "__main__":
         # 创建DataFrame，包含新增的元数据列
         df = pd.DataFrame(all_data, columns=[
             "分析人", 
+            "仪器编号",
+            "分析方法",
+            "检出限",
             "分析日期", 
             "项目名", 
             "样品编号", 
