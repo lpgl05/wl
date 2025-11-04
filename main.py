@@ -499,7 +499,7 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
                     sample = sample_cell.value
                     concentration = concentration_cell_values.value
                     
-                    # 对浓度值应用单元格格式化
+                    # 对浓度值应用单元格格式化（获取Excel显示值）
                     if concentration is not None and isinstance(concentration, (int, float)):
                         num_format = concentration_cell_format.number_format
                         
@@ -507,9 +507,29 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
                         if row_idx <= header_row + 5:
                             print(f"调试 - 行{row_idx}: 原值={concentration}, 格式='{num_format}'")
                         
-                        # 不管格式是什么，只要是数字，都四舍五入到整数
-                        # 因为你的 Excel 显示的是整数，说明格式设置就是显示整数
-                        concentration = int(round(concentration))
+                        # 根据单元格格式进行智能格式化，模拟Excel显示逻辑
+                        if num_format == '0' or num_format == '#,##0':  # 整数格式
+                            concentration = int(round(concentration))
+                        elif '.' in num_format:  # 包含小数点的格式
+                            try:
+                                # 提取小数点后的部分，解析小数位数
+                                after_dot = num_format.split('.')[-1]
+                                # 计算小数位数（统计0和#的个数）
+                                decimals = 0
+                                for char in after_dot:
+                                    if char in ('0', '#'):
+                                        decimals += 1
+                                    elif char not in (' ', '_', ';', '-', ','):
+                                        break  # 遇到其他字符停止计数
+                                
+                                if decimals > 0:
+                                    # 应用四舍五入到指定小数位数
+                                    concentration = round(concentration, decimals)
+                            except:
+                                pass  # 解析失败，保持原值
+                        elif num_format == 'General' or not num_format:
+                            # General格式或无格式，保持原值
+                            pass
                         
                         if row_idx <= header_row + 5:
                             print(f"         转换后={concentration}")
@@ -533,21 +553,104 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
                         continue
                 result_array.append([sample, concentration])
     else:
-        # .xls 文件使用 pandas 读取（默认读取缓存值）
-        sample_data = df[sample_col].tolist()
-        concentration_data = df[concentration_col].tolist()
+        # .xls 文件使用 xlrd 直接读取并应用格式化（获取Excel显示值）
+        print("  使用 xlrd 读取 .xls 文件并应用单元格格式...")
+        try:
+            import xlrd
+            # 使用 formatting_info=True 来获取格式信息
+            wb_xls = xlrd.open_workbook(file_path, formatting_info=True)
+            ws_xls = wb_xls.sheet_by_name(sheet_name) if sheet_name else wb_xls.sheet_by_index(0)
+            
+            # 找到样品编号和浓度列的索引
+            sample_col_idx = None
+            concentration_col_idx = None
+            for col_idx in range(ws_xls.ncols):
+                cell_value = ws_xls.cell_value(header_row, col_idx)
+                if cell_value == sample_col:
+                    sample_col_idx = col_idx
+                elif cell_value == concentration_col:
+                    concentration_col_idx = col_idx
+            
+            if sample_col_idx is None or concentration_col_idx is None:
+                print("  ⚠ 在 .xls 文件中未找到目标列，回退到 pandas")
+                # 回退到pandas
+                sample_data = df[sample_col].tolist()
+                concentration_data = df[concentration_col].tolist()
+                for sample, concentration in zip(sample_data, concentration_data):
+                    if skip_empty_rows:
+                        if pd.isna(sample) and pd.isna(concentration):
+                            continue
+                    result_array.append([sample, concentration])
+            else:
+                # 从数据行开始读取（header_row + 1）
+                for row_idx in range(header_row + 1, ws_xls.nrows):
+                    sample = ws_xls.cell_value(row_idx, sample_col_idx)
+                    concentration = ws_xls.cell_value(row_idx, concentration_col_idx)
+                    
+                    # 对浓度值应用格式化（获取Excel显示值）
+                    if isinstance(concentration, (int, float)):
+                        try:
+                            # 获取单元格格式索引
+                            xf_index = ws_xls.cell_xf_index(row_idx, concentration_col_idx)
+                            xf = wb_xls.format_map.get(wb_xls.xf_list[xf_index].format_key)
+                            
+                            if xf:
+                                format_str = xf.format_str
+                                
+                                # 调试：打印前几行的格式信息
+                                if row_idx <= header_row + 5:
+                                    print(f"  调试 - 行{row_idx}: 原值={concentration}, 格式='{format_str}'", end="")
+                                
+                                # 根据格式字符串进行格式化
+                                # 小数格式（优先判断，因为包含小数点）
+                                if '.' in format_str:
+                                    try:
+                                        # 提取小数点后的部分
+                                        after_dot = format_str.split('.')[-1]
+                                        # 计算小数位数（统计0和#的个数）
+                                        decimals = 0
+                                        for char in after_dot:
+                                            if char in ('0', '#'):
+                                                decimals += 1
+                                            elif char not in (' ', '_', ';', '-', ',', ')'):
+                                                break
+                                        
+                                        if decimals > 0:
+                                            concentration = round(concentration, decimals)
+                                        else:
+                                            # 小数点后没有0或#，当作整数处理
+                                            concentration = int(round(concentration))
+                                    except:
+                                        pass
+                                # 整数格式（包含0或#但不包含小数点）
+                                elif '0' in format_str or '#' in format_str:
+                                    concentration = int(round(concentration))
+                                # General格式，保持原值
+                                elif format_str == 'General':
+                                    pass
+                                
+                                if row_idx <= header_row + 5:
+                                    print(f" → 转换后={concentration}")
+                        except:
+                            pass
+                    
+                    # 如果需要跳过空行
+                    if skip_empty_rows:
+                        if (sample is None or sample == '') and (concentration is None or concentration == ''):
+                            continue
+                    
+                    result_array.append([sample, concentration])
         
-        for sample, concentration in zip(sample_data, concentration_data):
-            if skip_empty_rows:
-                if pd.isna(sample) and pd.isna(concentration):
-                    continue
-            
-            # 对浓度值进行四舍五入到整数（与Excel显示的格式一致）
-            if concentration is not None and not pd.isna(concentration):
-                if isinstance(concentration, (int, float)):
-                    concentration = int(round(concentration))
-            
-            result_array.append([sample, concentration])
+        except Exception as e:
+            print(f"  ⚠ 使用 xlrd 读取格式失败: {e}，回退到 pandas")
+            # 回退到pandas读取
+            sample_data = df[sample_col].tolist()
+            concentration_data = df[concentration_col].tolist()
+            for sample, concentration in zip(sample_data, concentration_data):
+                if skip_empty_rows:
+                    if pd.isna(sample) and pd.isna(concentration):
+                        continue
+                result_array.append([sample, concentration])
     
     # 注意：平行样品现在作为独立样品处理
     # - 不再填充平行样品的空值
