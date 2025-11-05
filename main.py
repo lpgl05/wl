@@ -197,7 +197,8 @@ def extract_metadata_from_excel(file_path, sheet_name=None):
     """
     metadata = {
         'analyzer': '',
-        'instrument_number': '',
+        'instrument_name': '',  # 使用仪器
+        'instrument_number': '',  # 仪器编号
         'analysis_method': '',
         'detection_limit': '',
         'analysis_date': ''
@@ -219,9 +220,9 @@ def extract_metadata_from_excel(file_path, sheet_name=None):
             label_mapping = {
                 '分析人': 'analyzer',
                 '分析人员': 'analyzer',
+                '使用仪器': 'instrument_name',
                 '仪器编号': 'instrument_number',
                 '仪器型号': 'instrument_number',
-                '使用仪器': 'instrument_number',
                 '分析方法': 'analysis_method',
                 '检出限': 'detection_limit',
                 '分析日期': 'analysis_date'
@@ -244,9 +245,9 @@ def extract_metadata_from_excel(file_path, sheet_name=None):
             label_mapping = {
                 '分析人': 'analyzer',
                 '分析人员': 'analyzer',
+                '使用仪器': 'instrument_name',
                 '仪器编号': 'instrument_number',
                 '仪器型号': 'instrument_number',
-                '使用仪器': 'instrument_number',
                 '分析方法': 'analysis_method',
                 '检出限': 'detection_limit',
                 '分析日期': 'analysis_date'
@@ -745,11 +746,17 @@ if __name__ == "__main__":
             
             # 基于result_array，添加元数据列
             for row in result_array:
+                # 仪器编号列：优先使用 instrument_number，如果为空则使用 instrument_name
+                # 这样可以处理两种情况：
+                # 1. 有"仪器编号"标签 → 使用仪器编号的值（如 /）
+                # 2. 只有"使用仪器"标签 → 使用使用仪器的值（如 酸式滴定管）
+                instrument_info = metadata.get('instrument_number', '') or metadata.get('instrument_name', '')
+                
                 # 列顺序：分析人、仪器编号、分析方法、检出限、分析日期、项目名、样品编号、样品浓度
                 row.insert(0, metadata.get('analysis_date', ''))
                 row.insert(0, metadata.get('detection_limit', ''))
                 row.insert(0, metadata.get('analysis_method', ''))
-                row.insert(0, metadata.get('instrument_number', ''))
+                row.insert(0, instrument_info)
                 row.insert(0, metadata.get('analyzer', ''))
                 row.insert(5, project_name)  # 项目名在第6列（索引5）
                 all_data.append(row)
