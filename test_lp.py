@@ -64,8 +64,9 @@ def read_xls_with_formatting(filepath, sheet_index=0):
                         format_str = xf.format_str
                         
                         # 打印前几行的格式信息（调试用）
-                        if row_idx < 20 and col_idx < 10:
-                            print(f"单元格({row_idx},{col_idx}): 原值={cell_value}, 格式='{format_str}'", end="")
+                        # 特别关注行22列7（可能是7.90的单元格）
+                        if (row_idx < 20 and col_idx < 10) or (row_idx == 22 and col_idx == 7):
+                            print(f"单元格({row_idx},{col_idx}): 原值={cell_value}, 类型={type(cell_value).__name__}, 格式='{format_str}'", end="")
                         
                         # 根据格式字符串进行格式化
                         if format_str:
@@ -82,7 +83,12 @@ def read_xls_with_formatting(filepath, sheet_index=0):
                                             break
                                     
                                     if decimals > 0:
-                                        cell_value = round(cell_value, decimals)
+                                        # 格式化为字符串以保持小数位数（包括末尾的0）
+                                        # 例如：7.9 + 格式'0.00' → "7.90"
+                                        format_template = f"{{:.{decimals}f}}"
+                                        cell_value = format_template.format(cell_value)
+                                        # 保持为字符串，这样才能保留末尾的0
+                                        # Excel显示的是"7.90"，我们也返回"7.90"
                                     else:
                                         # 小数点后没有0或#，当作整数处理
                                         cell_value = int(round(cell_value))
@@ -95,7 +101,7 @@ def read_xls_with_formatting(filepath, sheet_index=0):
                             elif format_str == 'General':
                                 pass
                         
-                        if row_idx < 20 and col_idx < 10:
+                        if (row_idx < 20 and col_idx < 10) or (row_idx == 22 and col_idx == 7):
                             print(f" → 转换后={cell_value}")
                     
                 except Exception as e:
@@ -166,6 +172,46 @@ if __name__ == "__main__":
     print("="*80)
     for i, row in enumerate(all_data[:10]):
         print(f"行{i}: {row[:10]}")  # 只显示前10列
+    
+    # 提取浓度列（样品浓度（mg/L））
+    print("\n" + "="*80)
+    print("提取浓度列数据:")
+    print("="*80)
+    
+    # 找到浓度列的索引
+    concentration_col_idx = None
+    header_row_idx = None
+    
+    # 查找表头行和浓度列
+    for i, row in enumerate(all_data):
+        for j, cell in enumerate(row):
+            if isinstance(cell, str) and '样品浓度' in cell:
+                concentration_col_idx = j
+                header_row_idx = i
+                print(f"找到浓度列: 列索引={concentration_col_idx}, 表头行={header_row_idx}")
+                print(f"列名: '{cell}'")
+                break
+        if concentration_col_idx is not None:
+            break
+    
+    if concentration_col_idx is not None and header_row_idx is not None:
+        print(f"\n浓度列所有数据（从第{header_row_idx + 2}行开始）:")
+        print("-" * 80)
+        concentration_values = []
+        for i in range(header_row_idx + 1, len(all_data)):
+            value = all_data[i][concentration_col_idx] if concentration_col_idx < len(all_data[i]) else None
+            if value is not None and value != '':
+                concentration_values.append(value)
+                # 特别标注7.9附近的值，查看格式问题
+                marker = " [CHECK]" if str(value) == "7.9" else ""
+                print(f"行{i}: {value}{marker}")
+        
+        print("\n" + "="*80)
+        print(f"总共提取到 {len(concentration_values)} 个浓度值")
+        print("="*80)
+        print(f"浓度值列表: {concentration_values}")
+    else:
+        print("\n⚠ 未找到浓度列")
     
     print("\n" + "="*80)
     print("导出到新的Excel文件...")

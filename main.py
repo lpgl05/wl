@@ -616,7 +616,11 @@ def extract_sample_and_concentration(file_path, skip_empty_rows=False, targets=N
                                                 break
                                         
                                         if decimals > 0:
-                                            concentration = round(concentration, decimals)
+                                            # 格式化为字符串以保持小数位数（包括末尾的0）
+                                            # 例如：7.9 + 格式'0.00' → "7.90"
+                                            format_template = f"{{:.{decimals}f}}"
+                                            concentration = format_template.format(concentration)
+                                            # 保持为字符串，这样才能保留末尾的0
                                         else:
                                             # 小数点后没有0或#，当作整数处理
                                             concentration = int(round(concentration))
